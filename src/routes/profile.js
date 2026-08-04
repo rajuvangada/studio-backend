@@ -14,6 +14,7 @@ const DEFAULT_PROFILE = {
   studio_name: "GK Digital Studios",
   owner_name: "Govind Kumar Gella",
   logo_url: null,
+  owner_photo_url: null,
   phone: "+91 98765 43210",
   whatsapp: "+91 98765 43210",
   email: "studio@gkdigitalstudios.com",
@@ -27,9 +28,12 @@ const DEFAULT_PROFILE = {
 async function serialize(profile) {
   if (!profile) return DEFAULT_PROFILE;
   const obj = profile.toObject ? profile.toObject() : profile;
+  const ownerPhotoUrl = profile.ownerPhotoUrl || (profile.ownerPhotoKey ? await signDownload(profile.ownerPhotoKey) : null);
   return {
     ...obj,
     logoUrl: profile.logoKey ? await signDownload(profile.logoKey) : null,
+    ownerPhotoUrl,
+    owner_photo_url: ownerPhotoUrl,
   };
 }
 
@@ -65,6 +69,8 @@ profileRouter.put(
         tagline: z.string().max(300).optional().nullable(),
         about: z.string().max(4000).optional().nullable(),
         logoKey: z.string().max(400).optional().nullable(),
+        ownerPhotoKey: z.string().max(400).optional().nullable(),
+        ownerPhotoUrl: z.string().max(2000).optional().nullable(),
       })
       .partial()
       .parse(req.body);
@@ -113,6 +119,41 @@ profileRouter.post(
 
     console.log("[profile] Studio profile logo updated in MongoDB");
     res.json({ profile: { ...(await serialize(profile)), logoUrl } });
+  }),
+);
+
+profileRouter.post(
+  "/photo/sign",
+  requireAuth,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const body = z.object({ fileName: z.string(), contentType: z.string() }).parse(req.body);
+    const key = buildKey("branding/owner", body.fileName);
+    res.json({ key, uploadUrl: await signUpload(key, body.contentType) });
+  }),
+);
+
+profileRouter.post(
+  "/photo/upload",
+  requireAuth,
+  requireAdmin,
+  upload.single("file"),
+  asyncHandler(async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: "No profile photo file provided." });
+    }
+
+    const key = buildKey("branding/owner", req.file.originalname);
+    const ownerPhotoUrl = await uploadToS3(req.file.buffer, key, req.file.mimetype);
+
+    const profile = await StudioProfile.findOneAndUpdate(
+      { singleton: true },
+      { ownerPhotoKey: key, ownerPhotoUrl },
+      { new: true, upsert: true },
+    );
+
+    console.log("[profile] Owner profile photo updated in MongoDB");
+    res.json({ profile: { ...(await serialize(profile)), ownerPhotoUrl } });
   }),
 );
 

@@ -54,6 +54,8 @@ const StudioProfileSchema = new Schema(
     studioName: { type: String, default: "GK Digital Studios" },
     ownerName: String,
     logoKey: String,
+    ownerPhotoKey: String,
+    ownerPhotoUrl: String,
     phone: String,
     whatsapp: String,
     email: String,
