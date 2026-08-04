@@ -28,10 +28,25 @@ const DEFAULT_PROFILE = {
 async function serialize(profile) {
   if (!profile) return DEFAULT_PROFILE;
   const obj = profile.toObject ? profile.toObject() : profile;
-  const ownerPhotoUrl = profile.ownerPhotoUrl || (profile.ownerPhotoKey ? await signDownload(profile.ownerPhotoKey) : null);
+
+  let ownerPhotoUrl = null;
+  if (profile.ownerPhotoKey) {
+    ownerPhotoUrl = await signDownload(profile.ownerPhotoKey);
+  } else if (profile.ownerPhotoUrl) {
+    ownerPhotoUrl = await signDownload(profile.ownerPhotoUrl);
+  }
+
+  let logoUrl = null;
+  if (profile.logoKey) {
+    logoUrl = await signDownload(profile.logoKey);
+  } else if (profile.logoUrl) {
+    logoUrl = await signDownload(profile.logoUrl);
+  }
+
   return {
     ...obj,
-    logoUrl: profile.logoKey ? await signDownload(profile.logoKey) : null,
+    logoUrl,
+    logo_url: logoUrl,
     ownerPhotoUrl,
     owner_photo_url: ownerPhotoUrl,
   };

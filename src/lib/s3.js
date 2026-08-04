@@ -67,22 +67,32 @@ export async function signUpload(key, contentType) {
   }
 }
 
-/** Short-lived read URL — fallback to public S3 URL if presign is unnecessary/fails. */
 export async function signDownload(key) {
   if (!key) return null;
-  if (key.startsWith("http://") || key.startsWith("https://") || key.startsWith("data:")) {
-    return key;
+  if (typeof key !== "string") return null;
+
+  // Extract raw S3 object key if a full S3 endpoint URL was passed
+  let s3Key = key;
+  if (key.includes(".amazonaws.com/")) {
+    s3Key = key.split(".amazonaws.com/")[1] || key;
   }
+
+  if (s3Key.startsWith("data:")) {
+    return s3Key;
+  }
+
   if (!env.aws.accessKeyId || !env.aws.secretAccessKey) {
-    return getS3Url(key);
+    return getS3Url(s3Key);
   }
+
   try {
-    return await getSignedUrl(s3, new GetObjectCommand({ Bucket: env.aws.bucket, Key: key }), {
+    const signedUrl = await getSignedUrl(s3, new GetObjectCommand({ Bucket: env.aws.bucket, Key: s3Key }), {
       expiresIn: env.aws.signedUrlTtl,
     });
+    return signedUrl;
   } catch (err) {
     console.warn("[s3] signDownload fallback to public URL:", err.message);
-    return getS3Url(key);
+    return getS3Url(s3Key);
   }
 }
 
