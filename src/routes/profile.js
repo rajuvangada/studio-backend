@@ -139,12 +139,18 @@ profileRouter.post(
   requireAdmin,
   upload.single("file"),
   asyncHandler(async (req, res) => {
+    console.log("[profile/photo/upload] Incoming POST upload request. Body keys:", Object.keys(req.body || {}));
     if (!req.file) {
-      return res.status(400).json({ error: "No profile photo file provided." });
+      console.error("[profile/photo/upload] Error: req.file is undefined. Multer did not receive a file.");
+      return res.status(400).json({ error: "No profile photo file provided or invalid form field name (must be 'file')." });
     }
 
+    console.log(`[profile/photo/upload] File received by Multer: name=${req.file.originalname}, size=${req.file.size} bytes, type=${req.file.mimetype}`);
+
     const key = buildKey("branding/owner", req.file.originalname);
+    console.log(`[profile/photo/upload] Uploading file to AWS S3 with key=${key}`);
     const ownerPhotoUrl = await uploadToS3(req.file.buffer, key, req.file.mimetype);
+    console.log(`[profile/photo/upload] AWS S3 Upload Success! URL=${ownerPhotoUrl}`);
 
     const profile = await StudioProfile.findOneAndUpdate(
       { singleton: true },
@@ -152,8 +158,9 @@ profileRouter.post(
       { new: true, upsert: true },
     );
 
-    console.log("[profile] Owner profile photo updated in MongoDB");
-    res.json({ profile: { ...(await serialize(profile)), ownerPhotoUrl } });
+    console.log("[profile/photo/upload] MongoDB StudioProfile document updated successfully.");
+    const serialized = await serialize(profile);
+    res.json({ profile: { ...serialized, ownerPhotoUrl } });
   }),
 );
 

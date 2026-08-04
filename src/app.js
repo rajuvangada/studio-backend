@@ -22,9 +22,14 @@ export function createApp() {
 
   app.set("trust proxy", 1);
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
-  app.use(cors({ origin: env.clientOrigin, credentials: true }));
+  app.use(
+    cors({
+      origin: (origin, callback) => callback(null, true),
+      credentials: true,
+    }),
+  );
   app.use(express.json({ limit: "10mb" }));
-  app.use(express.raw({ type: "*/*", limit: "100mb" }));
+  app.use(express.raw({ type: "application/octet-stream", limit: "100mb" }));
   app.use(cookieParser());
   app.use(morgan(isProd ? "combined" : "dev"));
 
