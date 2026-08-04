@@ -37,43 +37,73 @@ async function authorize(token, passcode) {
 }
 
 /** Check gallery token info and publication status before passcode entry */
-galleryRouter.get(
-  "/:token/info",
-  asyncHandler(async (req, res) => {
-    const client = await getGalleryClient(req.params.token);
-    res.json({
-      ok: true,
+const handleGetGalleryInfo = asyncHandler(async (req, res) => {
+  const client = await getGalleryClient(req.params.token);
+  res.json({
+    ok: true,
+    published: true,
+    name: client.name,
+    eventName: client.eventName,
+    eventDate: client.eventDate,
+    location: client.location,
+    galleryPublished: client.galleryPublished,
+  });
+});
+
+galleryRouter.get("/:token/info", handleGetGalleryInfo);
+galleryRouter.get("/:token", handleGetGalleryInfo);
+
+/** Client login to their private gallery — passcode only, no account needed. */
+const handleVerifyPasscode = asyncHandler(async (req, res) => {
+  const { passcode } = z.object({ passcode: z.string().max(40) }).parse(req.body);
+  const client = await authorize(req.params.token, passcode);
+
+  const [media, selections, latest] = await Promise.all([
+    Media.find({ client: client._id }).sort({ sortOrder: 1, createdAt: 1 }),
+    Selection.find({ client: client._id }),
+    Submission.findOne({ client: client._id }).sort({ submittedAt: -1 }),
+  ]);
+  const selectedIds = new Set(selections.map((s) => s.media.toString()));
+
+  res.json({
+    ok: true,
+    client: {
       name: client.name,
       eventName: client.eventName,
       eventDate: client.eventDate,
       location: client.location,
-      galleryPublished: client.galleryPublished,
-    });
-  }),
-);
+    },
+    photos: await Promise.all(
+      media.map(async (m) => ({
+        id: m._id,
+        kind: m.kind,
+        fileName: m.fileName,
+        selected: selectedIds.has(m._id.toString()),
+        url: (await signDownload(m.storageKey)) || getS3Url(m.storageKey),
+      })),
+    ),
+    submittedAt: latest?.submittedAt ?? null,
+  });
+});
 
-/** Client login to their private gallery — passcode only, no account needed. */
-galleryRouter.post(
-  "/:token/open",
-  unlockLimiter,
+galleryRouter.post("/:token/open", unlockLimiter, handleVerifyPasscode);
+galleryRouter.post("/:token/verify-passcode", unlockLimiter, handleVerifyPasscode);
+
+/** Fetch gallery media items for an authenticated token & passcode */
+galleryRouter.get(
+  "/:token/media",
   asyncHandler(async (req, res) => {
-    const { passcode } = z.object({ passcode: z.string().max(40) }).parse(req.body);
+    const passcode = String(req.query.passcode || req.headers["x-passcode"] || "");
     const client = await authorize(req.params.token, passcode);
 
-    const [media, selections, latest] = await Promise.all([
+    const [media, selections] = await Promise.all([
       Media.find({ client: client._id }).sort({ sortOrder: 1, createdAt: 1 }),
       Selection.find({ client: client._id }),
-      Submission.findOne({ client: client._id }).sort({ submittedAt: -1 }),
     ]);
     const selectedIds = new Set(selections.map((s) => s.media.toString()));
 
     res.json({
-      client: {
-        name: client.name,
-        eventName: client.eventName,
-        eventDate: client.eventDate,
-        location: client.location,
-      },
+      ok: true,
       photos: await Promise.all(
         media.map(async (m) => ({
           id: m._id,
@@ -83,7 +113,6 @@ galleryRouter.post(
           url: (await signDownload(m.storageKey)) || getS3Url(m.storageKey),
         })),
       ),
-      submittedAt: latest?.submittedAt ?? null,
     });
   }),
 );

@@ -35,6 +35,7 @@ export function createApp() {
 
   app.use("/api/auth", authRouter);
   app.use("/api/clients", clientsRouter);
+  app.use("/api/galleries", clientsRouter);
   app.use("/api/gallery", galleryRouter);
   app.use("/api/portfolio", portfolioRouter);
   app.use("/api/inquiries", inquiriesRouter);
