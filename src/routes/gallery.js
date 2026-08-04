@@ -3,20 +3,31 @@ import { z } from "zod";
 import { Client } from "../models/Client.js";
 import { ActivityEvent, Media, Selection, Submission } from "../models/Media.js";
 import { asyncHandler } from "../middleware/error.js";
-import { signDownload } from "../lib/s3.js";
+import { signDownload, getS3Url } from "../lib/s3.js";
 import rateLimit from "express-rate-limit";
 
 export const galleryRouter = Router();
 
 const unlockLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 30 });
 
-async function authorize(token, passcode) {
+/** Helper to find and validate gallery client by token */
+async function getGalleryClient(token) {
   const client = await Client.findOne({ galleryToken: token, isActive: true });
-  if (!client || !client.galleryPublished) {
-    const err = new Error("This gallery is not available.");
+  if (!client) {
+    const err = new Error("Gallery not found.");
     err.status = 404;
     throw err;
   }
+  if (!client.galleryPublished) {
+    const err = new Error("Gallery is not available.");
+    err.status = 403;
+    throw err;
+  }
+  return client;
+}
+
+async function authorize(token, passcode) {
+  const client = await getGalleryClient(token);
   if (!passcode || passcode.trim().toUpperCase() !== client.passcode.toUpperCase()) {
     const err = new Error("Incorrect passcode.");
     err.status = 401;
@@ -24,6 +35,22 @@ async function authorize(token, passcode) {
   }
   return client;
 }
+
+/** Check gallery token info and publication status before passcode entry */
+galleryRouter.get(
+  "/:token/info",
+  asyncHandler(async (req, res) => {
+    const client = await getGalleryClient(req.params.token);
+    res.json({
+      ok: true,
+      name: client.name,
+      eventName: client.eventName,
+      eventDate: client.eventDate,
+      location: client.location,
+      galleryPublished: client.galleryPublished,
+    });
+  }),
+);
 
 /** Client login to their private gallery — passcode only, no account needed. */
 galleryRouter.post(
@@ -53,7 +80,7 @@ galleryRouter.post(
           kind: m.kind,
           fileName: m.fileName,
           selected: selectedIds.has(m._id.toString()),
-          url: await signDownload(m.storageKey),
+          url: (await signDownload(m.storageKey)) || getS3Url(m.storageKey),
         })),
       ),
       submittedAt: latest?.submittedAt ?? null,
